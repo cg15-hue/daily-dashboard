@@ -19,6 +19,9 @@
   @keyframes nodeGlow { 0%,100% { opacity: .25; r: 2.2; } 50% { opacity: 1; r: 3.4; } }
   @keyframes drift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(8px,-10px); } }
   @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(220%); } }
+  @keyframes radarSpin { to { transform: rotate(360deg); } }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  @keyframes hudGlow { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
 
   @property --a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
   html, body { height: 100%; }
@@ -34,12 +37,31 @@
   body::before {
     content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
     background-image:
-      linear-gradient(rgba(30,41,80,0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(30,41,80,0.05) 1px, transparent 1px),
-      linear-gradient(rgba(30,41,80,0.09) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(30,41,80,0.09) 1px, transparent 1px);
-    background-size: 34px 34px, 34px 34px, 170px 170px, 170px 170px;
-    mask-image: radial-gradient(circle at 50% 0%, black 0%, transparent 78%);
+      linear-gradient(rgba(30,41,80,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30,41,80,0.06) 1px, transparent 1px),
+      linear-gradient(rgba(30,41,80,0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30,41,80,0.1) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px;
+    mask-image: radial-gradient(circle at 50% 0%, black 0%, transparent 82%);
+  }
+  .hud-frame {
+    position: fixed; inset: 10px; z-index: 2; pointer-events: none;
+    border: 1px solid rgba(37,99,235,0.14); border-radius: 22px;
+  }
+  .hud-corner { position: fixed; width: 34px; height: 34px; z-index: 2; pointer-events: none; opacity: .6; animation: hudGlow 3s ease-in-out infinite; }
+  .hud-corner.tl { top: 10px; left: 10px; border-top: 2px solid #2563eb; border-left: 2px solid #2563eb; border-radius: 14px 0 0 0; }
+  .hud-corner.tr { top: 10px; right: 10px; border-top: 2px solid #f59e0b; border-right: 2px solid #f59e0b; border-radius: 0 14px 0 0; }
+  .hud-corner.bl { bottom: 10px; left: 10px; border-bottom: 2px solid #f59e0b; border-left: 2px solid #f59e0b; border-radius: 0 0 0 14px; animation-delay: 1s; }
+  .hud-corner.br { bottom: 10px; right: 10px; border-bottom: 2px solid #2563eb; border-right: 2px solid #2563eb; border-radius: 0 0 14px 0; animation-delay: 1.5s; }
+  .hud-tag { position: fixed; z-index: 2; pointer-events: none; font-size: 9px; font-weight: 800; letter-spacing: .1em;
+    color: #8b93a7; font-family: "SF Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; }
+  .hud-tag.tl { top: 16px; left: 52px; }
+  .hud-tag.br { bottom: 16px; right: 52px; text-align: right; }
+  .hud-tag .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #16a34a; margin-right: 5px; animation: blink 1.4s step-start infinite; }
+  .radar-aura {
+    position: fixed; top: -300px; right: -300px; width: 700px; height: 700px; z-index: 0; pointer-events: none;
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(37,99,235,0.10) 15deg, transparent 40deg, transparent 360deg);
+    animation: radarSpin 12s linear infinite; border-radius: 50%;
   }
   .bg-orbs { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; filter: blur(50px); }
   .orb { position: absolute; border-radius: 50%; opacity: .5; }
@@ -177,8 +199,9 @@
 
   .range-sub { font-size: 9.5px; color: #9aa2b1; font-weight: 600; margin-top: 2px; }
 
-  .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
-  @media (max-width: 720px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } }
+  .stats-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 18px 0; }
+  @media (max-width: 900px) { .stats-strip { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } }
   .stat-card {
     background: rgba(255,255,255,0.86); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     border: 1px solid #eceff7; border-radius: 14px; padding: 14px 16px; position: relative; overflow: hidden;
@@ -188,35 +211,75 @@
   .stat-label { font-size: 9.5px; font-weight: 800; color: #9aa2b1; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
   .stat-value { font-size: 18px; font-weight: 800; color: #0b1220; }
   .stat-sub { font-size: 11px; font-weight: 700; margin-top: 3px; }
+
+  .intro-text { font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 16px; }
+
+  .sector-row { display: grid; grid-template-columns: 130px 1fr 62px; align-items: center; gap: 10px; padding: 6px 0; }
+  .sector-name { font-size: 11.5px; font-weight: 700; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sector-bar-track { height: 8px; border-radius: 5px; background: #f1f3f9; overflow: hidden; position: relative; }
+  .sector-bar { height: 100%; border-radius: 5px; }
+  .sector-bar.pos { background: linear-gradient(90deg,#4ade80,#16a34a); }
+  .sector-bar.neg { background: linear-gradient(90deg,#f87171,#dc2626); }
+  .sector-row .chg { font-size: 10.5px; text-align: right; padding: 2px 6px; }
+
+  .movers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 800px) { .movers-grid { grid-template-columns: 1fr; } }
+  .mv-col-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #9aa2b1; margin-bottom: 8px; }
+  .mv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #f1f3f9; font-size: 11.5px; }
+  .mv-row:last-child { border-bottom: none; }
+  .mv-sym { font-weight: 800; color: #12141c; flex: 0 0 auto; width: 52px; }
+  .mv-price { color: #374151; font-weight: 700; flex: 1; }
+  .mv-vol { color: #b0b6c3; font-size: 9.5px; flex: 0 0 auto; }
+  .mv-row .chg { font-size: 10px; padding: 2px 6px; flex: 0 0 auto; }
+  .mv-empty { font-size: 11px; color: #b0b6c3; font-style: italic; }
+
+  .glossary-panel { background: rgba(255,255,255,0.7); border: 1px dashed #dfe3f0; border-radius: 16px; padding: 18px 20px; margin-top: 18px; }
+  .glossary-panel .panel-title { color: #6b7280; }
+  .glossary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+  @media (max-width: 720px) { .glossary-grid { grid-template-columns: 1fr; } }
+  .gloss-item { font-size: 11.5px; line-height: 1.55; color: #6b7280; }
+  .gloss-item b { color: #374151; }
 </style>
 </head>
 <body>
 <div class="bg-orbs"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div></div>
+<div class="radar-aura"></div>
 
 <svg class="circuit-svg" preserveAspectRatio="none">
   <defs>
-    <pattern id="circuitPattern" width="160" height="160" patternUnits="userSpaceOnUse">
-      <path class="trace" d="M0,40 H60 V0" />
-      <path class="trace" d="M160,120 H100 V160" />
-      <path class="trace" d="M0,120 H40 V160" />
-      <path class="trace" d="M100,0 V50 H160" />
-      <path class="trace" d="M60,80 H120 V160" />
-      <path class="trace" d="M0,80 H30" />
-      <circle class="node" cx="60" cy="40" r="2.6" />
-      <circle class="node" cx="100" cy="120" r="2.6" />
-      <circle class="node" cx="40" cy="120" r="2.6" />
-      <circle class="node" cx="100" cy="50" r="2.6" />
-      <circle class="node" cx="120" cy="80" r="2.6" />
+    <pattern id="circuitPattern" width="110" height="110" patternUnits="userSpaceOnUse">
+      <path class="trace" d="M0,30 H40 V0" />
+      <path class="trace" d="M110,80 H70 V110" />
+      <path class="trace" d="M0,80 H25 V110" />
+      <path class="trace" d="M70,0 V35 H110" />
+      <path class="trace" d="M40,55 H85 V110" />
+      <path class="trace" d="M0,55 H20" />
+      <path class="trace" d="M55,0 V20" />
+      <path class="trace" d="M90,55 V90 H110" />
+      <circle class="node" cx="40" cy="30" r="2.4" />
+      <circle class="node" cx="70" cy="80" r="2.4" />
+      <circle class="node" cx="25" cy="80" r="2.4" />
+      <circle class="node" cx="70" cy="35" r="2.4" />
+      <circle class="node" cx="85" cy="55" r="2.4" />
+      <circle class="node" cx="55" cy="20" r="2" />
+      <circle class="node" cx="90" cy="55" r="2" />
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#circuitPattern)" />
-  <path class="trace-flow" d="M0,40 H60 V0" />
-  <path class="trace-flow" d="M100,0 V50 H160" style="animation-delay:-1.2s" />
-  <path class="trace-flow" d="M60,80 H120 V160" style="animation-delay:-2.4s" />
+  <path class="trace-flow" d="M0,30 H40 V0" />
+  <path class="trace-flow" d="M70,0 V35 H110" style="animation-delay:-1s" />
+  <path class="trace-flow" d="M40,55 H85 V110" style="animation-delay:-2s" />
+  <path class="trace-flow" d="M90,55 V90 H110" style="animation-delay:-2.8s" />
 </svg>
 
 <div class="beam-x b1"></div><div class="beam-x b2"></div>
 <div class="particles" id="particles"></div>
+
+<div class="hud-frame"></div>
+<div class="hud-corner tl"></div><div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div><div class="hud-corner br"></div>
+<div class="hud-tag tl"><span class="dot"></span>SIGNAL: LIVE</div>
+<div class="hud-tag br">DASHBOARD.SYS · BUILD 3.0</div>
 
 <div class="wrap">
   <div class="topline"></div>
@@ -250,6 +313,7 @@
         <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17L9 11L13 15L21 6" stroke="#2563eb" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Market Report</span>
         <span class="seg">EQUITIES</span>
       </div>
+      <div class="intro-text">A snapshot of the three major U.S. indices, tracked via their most liquid ETF proxies, plus the underlying breadth of individual names driving the move.</div>
 
       <div class="metric-row">
         <div class="metric-name">S&amp;P 500 <span class="ticker-tag">SPY</span></div>
@@ -281,6 +345,7 @@
         <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M9 6V18M13 6V18M6 9H16.5C18 9 19 8 19 6.5C19 5 18 4 16.5 4H6M6 15H17C18.5 15 19.5 16 19.5 17.5C19.5 19 18.5 20 17 20H6" stroke="#d97706" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Crypto Cycle Report</span>
         <span class="seg">DIGITAL ASSETS</span>
       </div>
+      <div class="intro-text">Bitcoin and Ethereum price action plus the sentiment and dominance metrics traders use to gauge where the broader crypto market cycle stands.</div>
 
       <div class="metric-row">
         <div class="metric-name">Bitcoin <span class="ticker-tag">BTC</span></div>
@@ -350,10 +415,49 @@
       <div class="stat-value mono">{{COMBINED_DOM}}</div>
       <div class="stat-sub" style="color:#9aa2b1">share of total market cap</div>
     </div>
+    <div class="stat-card" style="--acc:#dc2626">
+      <div class="stat-label">10-Year Treasury Yield</div>
+      <div class="stat-value mono">{{TREASURY_10Y}}</div>
+      <div class="stat-sub" style="color:#9aa2b1">as of {{TREASURY_DATE}}</div>
+    </div>
   </div>
 
   <div class="movers-bar">
     {{MOVERS}}
+  </div>
+
+  <div class="wide-panel">
+    <div class="panel-title">
+      <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M10 19V9M16 19V12M22 19V6" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Sector Performance</span>
+      <span class="seg">11 GICS SECTORS</span>
+    </div>
+    <div class="intro-text">Real-time performance across all 11 S&amp;P sector groups. Sector rotation — money flowing into or out of specific sectors — often tells a more complete story than the headline index number alone.</div>
+    <div class="sector-list">
+      {{SECTOR_ROWS}}
+    </div>
+    <div class="range-sub" style="margin-top:10px">Leading today: <b>{{BEST_SECTOR}}</b> · Lagging: <b>{{WORST_SECTOR}}</b></div>
+  </div>
+
+  <div class="wide-panel">
+    <div class="panel-title">
+      <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="#7c3aed" stroke-width="1.8" stroke-linejoin="round"/></svg></span> Market Movers</span>
+      <span class="seg">REAL-TIME · U.S. MARKET-WIDE</span>
+    </div>
+    <div class="intro-text">Not limited to the watchlist above — these are the actual top gainers, losers, and most actively traded tickers across the entire U.S. market right now.</div>
+    <div class="movers-grid">
+      <div>
+        <div class="mv-col-title">Top Gainers</div>
+        {{GAINERS_ROWS}}
+      </div>
+      <div>
+        <div class="mv-col-title">Top Losers</div>
+        {{LOSERS_ROWS}}
+      </div>
+      <div>
+        <div class="mv-col-title">Most Active</div>
+        {{ACTIVE_ROWS}}
+      </div>
+    </div>
   </div>
 
   <div class="wide-panel">
@@ -373,6 +477,18 @@
     </div>
     <div class="tile-grid">
       {{CRYPTO_TILES}}
+    </div>
+  </div>
+
+  <div class="glossary-panel">
+    <div class="panel-title"><span class="lhs">How to read this page</span></div>
+    <div class="glossary-grid">
+      <div class="gloss-item"><b>Market breadth</b> — how many individual stocks rose vs. fell. Strong breadth (most stocks up) suggests a healthy, broad rally; weak breadth alongside index gains can mean the move is being carried by just a few large names.</div>
+      <div class="gloss-item"><b>Sector rotation</b> — money moving from one sector into another (e.g. out of Tech and into Energy) often signals a shift in investor risk appetite before it shows up in the headline indices.</div>
+      <div class="gloss-item"><b>BTC / ETH dominance</b> — the share of the total crypto market cap held by Bitcoin or Ethereum. Rising dominance usually means capital is consolidating into the larger, more established coins (a risk-off signal within crypto).</div>
+      <div class="gloss-item"><b>Fear &amp; Greed Index</b> — a 0-100 sentiment score built from volatility, momentum, and social data. Extreme readings in either direction have historically (not reliably) preceded turning points.</div>
+      <div class="gloss-item"><b>10-Year Treasury yield</b> — the return on U.S. government debt; a key benchmark for borrowing costs across the economy. Rising yields can pressure stock valuations, especially growth stocks.</div>
+      <div class="gloss-item"><b>Day / 24h range</b> — the low-to-high price swing over the period, a quick read on how volatile trading has been.</div>
     </div>
   </div>
 

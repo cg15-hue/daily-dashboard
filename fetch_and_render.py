@@ -7,11 +7,11 @@ Env vars required:
   ALPHA_VANTAGE_KEY  - free key from https://www.alphavantage.co/support/#api-key
 
 NOTE on rate limits: Alpha Vantage's free tier allows 25 requests/day and
-5 requests/minute. This script makes one request per stock ticker below
-(18 total: 3 indices + 15 stocks), spaced 12s apart to stay under the
-per-minute limit. That leaves very little daily headroom for manual re-runs
-on top of the automatic daily run -- if you add more tickers, watch the
-25/day ceiling.
+5 requests/minute. This script makes 18 GLOBAL_QUOTE calls (3 indices + 15
+stocks) plus 3 more calls (SECTOR, TOP_GAINERS_LOSERS, TREASURY_YIELD) = 21
+requests/day, all spaced 12s apart to stay under the per-minute limit. That
+leaves only ~4 requests of daily headroom -- avoid extra manual re-runs on
+top of the automatic daily run, and watch the 25/day ceiling if you add more.
 """
 import os
 import sys
@@ -149,6 +149,77 @@ def get_fear_greed():
     return int(d["value"]), d["value_classification"]
 
 
+SECTOR_NAMES = {
+    "Information Technology": "Technology",
+    "Health Care": "Health Care",
+    "Financials": "Financials",
+    "Real Estate": "Real Estate",
+    "Consumer Discretionary": "Consumer Discretionary",
+    "Consumer Staples": "Consumer Staples",
+    "Communication Services": "Communication Svcs",
+    "Energy": "Energy",
+    "Industrials": "Industrials",
+    "Materials": "Materials",
+    "Utilities": "Utilities",
+}
+
+
+def get_sector_performance():
+    """Returns list of (sector_name, pct_change:float) sorted best-to-worst, via
+    Alpha Vantage SECTOR (one call, covers all 11 GICS sectors' real-time performance)."""
+    url = "https://www.alphavantage.co/query"
+    params = {"function": "SECTOR", "apikey": ALPHA_VANTAGE_KEY}
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+    rank = data.get("Rank A: Real-Time Performance", {}) or data.get("Rank B: 1 Day Performance", {})
+    out = []
+    for raw_name, pct_str in rank.items():
+        name = SECTOR_NAMES.get(raw_name, raw_name)
+        try:
+            pct = float(str(pct_str).replace("%", ""))
+        except ValueError:
+            continue
+        out.append((name, pct))
+    out.sort(key=lambda x: x[1], reverse=True)
+    return out
+
+
+def get_top_movers():
+    """Returns (gainers, losers, most_active), each a list of up to 5 dicts with
+    ticker/price/change_percentage/volume, via Alpha Vantage TOP_GAINERS_LOSERS
+    (one call, real market-wide data -- not limited to our watchlist)."""
+    url = "https://www.alphavantage.co/query"
+    params = {"function": "TOP_GAINERS_LOSERS", "apikey": ALPHA_VANTAGE_KEY}
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+    return (
+        data.get("top_gainers", [])[:5],
+        data.get("top_losers", [])[:5],
+        data.get("most_actively_traded", [])[:5],
+    )
+
+
+def get_treasury_yield():
+    """Returns (value:float, date:str) for the most recent 10-year Treasury yield,
+    via Alpha Vantage TREASURY_YIELD (one call, key macro/rate indicator)."""
+    url = "https://www.alphavantage.co/query"
+    params = {
+        "function": "TREASURY_YIELD",
+        "interval": "monthly",
+        "maturity": "10year",
+        "apikey": ALPHA_VANTAGE_KEY,
+    }
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    rows = r.json().get("data", [])
+    if not rows:
+        return None, None
+    latest = rows[0]
+    return float(latest["value"]), latest["date"]
+
+
 def cycle_read_text(fng_value, btc_chg):
     trend = "climbing" if btc_chg >= 0 else "pulling back"
     if fng_value <= 24:
@@ -179,13 +250,26 @@ def cycle_read_text(fng_value, btc_chg):
     )
 
 
-def session_note(sp_chg, nasdaq_chg, dow_chg):
+def session_note(sp_chg, nasdaq_chg, dow_chg, stocks_up, breadth_total=15):
     ups = sum(1 for c in (sp_chg, nasdaq_chg, dow_chg) if c > 0)
+    breadth_desc = (
+        f"Under the hood, {stocks_up} of the {breadth_total} individual stocks on the "
+        "watchlist traded higher, "
+        + (
+            "a healthy sign that gains were broad rather than concentrated in a couple of names."
+            if stocks_up >= breadth_total * 0.6
+            else "suggesting today's index-level move was driven by a narrower group of large-cap names rather than the market as a whole."
+            if stocks_up <= breadth_total * 0.4
+            else "a fairly even split between advancers and decliners."
+        )
+    )
     if ups == 3:
-        return "Broad-based gains across all three major indices today."
-    if ups == 0:
-        return "Broad-based losses across all three major indices today."
-    return "Mixed session — indices diverged today."
+        headline = "All three major indices closed higher, a broad-based risk-on session."
+    elif ups == 0:
+        headline = "All three major indices closed lower, a broad-based risk-off session."
+    else:
+        headline = "The major indices diverged today, with some up and others down — a mixed, less directional session."
+    return f"{headline} {breadth_desc}"
 
 
 def fng_angle(value):
@@ -208,6 +292,46 @@ def mover_line(label, symbol, chg):
         f'<div class="mover-item"><span class="mover-label">{label}</span> '
         f'<span class="mover-sym">{symbol}</span> '
         f'<span class="chg {cls_for(chg)}">{fmt_pct(chg)}</span></div>'
+    )
+
+
+def sector_bar_html(name, pct, max_abs):
+    max_abs = max(max_abs, 0.5)
+    width = min(abs(pct) / max_abs * 100, 100)
+    side = "pos" if pct >= 0 else "neg"
+    return (
+        '<div class="sector-row">'
+        f'<div class="sector-name">{name}</div>'
+        f'<div class="sector-bar-track"><div class="sector-bar {side}" style="width:{width:.1f}%"></div></div>'
+        f'<div class="chg {cls_for(pct)}">{fmt_pct(pct)}</div>'
+        "</div>"
+    )
+
+
+def market_row_html(item, show_volume=False):
+    ticker = item.get("ticker", "?")
+    try:
+        price = float(item.get("price", 0))
+    except (TypeError, ValueError):
+        price = 0.0
+    try:
+        chg_pct = float(str(item.get("change_percentage", "0%")).replace("%", ""))
+    except (TypeError, ValueError):
+        chg_pct = 0.0
+    extra = ""
+    if show_volume:
+        try:
+            vol = int(float(item.get("volume", 0)))
+            extra = f'<span class="mv-vol">{vol:,} vol</span>'
+        except (TypeError, ValueError):
+            pass
+    return (
+        '<div class="mv-row">'
+        f'<span class="mv-sym">{ticker}</span>'
+        f'<span class="mv-price mono">{fmt_money(price)}</span>'
+        f'{extra}'
+        f'<span class="chg {cls_for(chg_pct)}">{fmt_pct(chg_pct)}</span>'
+        "</div>"
     )
 
 
@@ -235,6 +359,21 @@ def main():
     best_stock = max(STOCKS, key=lambda s: quotes[s[0]]["chg"])
     worst_stock = min(STOCKS, key=lambda s: quotes[s[0]]["chg"])
     stocks_up = sum(1 for sym, _ in STOCKS if quotes[sym]["chg"] > 0)
+
+    # --- Sector performance, real market-wide movers, Treasury yield (3 more calls) ---
+    time.sleep(12)
+    sectors = get_sector_performance()
+    time.sleep(12)
+    gainers, losers, most_active = get_top_movers()
+    time.sleep(12)
+    treasury_value, treasury_date = get_treasury_yield()
+
+    max_sector_abs = max((abs(p) for _, p in sectors), default=1.0)
+    sector_html = "".join(sector_bar_html(name, pct, max_sector_abs) for name, pct in sectors)
+    gainers_html = "".join(market_row_html(i) for i in gainers) or '<div class="mv-empty">No data returned this run.</div>'
+    losers_html = "".join(market_row_html(i) for i in losers) or '<div class="mv-empty">No data returned this run.</div>'
+    active_html = "".join(market_row_html(i, show_volume=True) for i in most_active) or '<div class="mv-empty">No data returned this run.</div>'
+    treasury_str = f"{treasury_value:.2f}%" if treasury_value is not None else "N/A"
 
     # --- Crypto (richer per-coin data: market cap, volume, 24h high/low) ---
     by_id, global_data = get_crypto_data()
@@ -290,7 +429,7 @@ def main():
         "{{DOW_CHG}}": fmt_pct(dow_chg),
         "{{DOW_CLASS}}": cls_for(dow_chg),
         "{{DOW_RANGE}}": fmt_range(quotes["DIA"]["low"], quotes["DIA"]["high"]),
-        "{{SESSION_NOTE}}": session_note(sp_chg, nasdaq_chg, dow_chg),
+        "{{SESSION_NOTE}}": session_note(sp_chg, nasdaq_chg, dow_chg, stocks_up),
         "{{BTC_PRICE}}": fmt_money(btc_price, 0),
         "{{BTC_CHG}}": fmt_pct(btc_chg),
         "{{BTC_CLASS}}": cls_for(btc_chg),
@@ -316,6 +455,14 @@ def main():
         "{{MCAP_CLASS}}": cls_for(mcap_chg),
         "{{TOTAL_VOL}}": fmt_big(total_volume),
         "{{COMBINED_DOM}}": f"{btc_dom + eth_dom:.1f}%",
+        "{{SECTOR_ROWS}}": sector_html,
+        "{{BEST_SECTOR}}": sectors[0][0] if sectors else "N/A",
+        "{{WORST_SECTOR}}": sectors[-1][0] if sectors else "N/A",
+        "{{GAINERS_ROWS}}": gainers_html,
+        "{{LOSERS_ROWS}}": losers_html,
+        "{{ACTIVE_ROWS}}": active_html,
+        "{{TREASURY_10Y}}": treasury_str,
+        "{{TREASURY_DATE}}": treasury_date or "N/A",
     }
 
     ticker_item = (
