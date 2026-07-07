@@ -54,6 +54,16 @@ GitHub runs it on their infrastructure.
 - Fear & Greed Index: alternative.me public API (no key required)
 - S&P 500 / Nasdaq / Dow (via SPY/QQQ/DIA ETF proxies): Alpha Vantage (the one free key above)
 
+## Watchlist size & rate limits
+The dashboard now tracks 15 stocks (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM,
+V, JNJ, WMT, XOM, UNH, PG, HD) plus the 3 indices (18 Alpha Vantage calls per run),
+and 15 crypto coins (one batched CoinGecko call, no limit concern). Alpha Vantage's
+free tier allows 25 requests/day, so each automatic daily run uses about 18 of that
+25 — leaving very little room for manual "Run workflow" re-triggers on the same day.
+If you want a bigger stock watchlist without hitting that ceiling, consider
+switching to a provider with a more generous free tier (e.g. Twelve Data, 800
+requests/day) — ask me and I can swap it in.
+
 ## Changing the schedule
 Edit the `cron:` line in `.github/workflows/daily-report.yml`. It's currently
 `0 12 * * *` (12:00 UTC = 8:00 AM Eastern Daylight Time). Cron is always UTC on

@@ -5,6 +5,13 @@ Run daily via GitHub Actions (see .github/workflows/daily-report.yml).
 
 Env vars required:
   ALPHA_VANTAGE_KEY  - free key from https://www.alphavantage.co/support/#api-key
+
+NOTE on rate limits: Alpha Vantage's free tier allows 25 requests/day and
+5 requests/minute. This script makes one request per stock ticker below
+(18 total: 3 indices + 15 stocks), spaced 12s apart to stay under the
+per-minute limit. That leaves very little daily headroom for manual re-runs
+on top of the automatic daily run -- if you add more tickers, watch the
+25/day ceiling.
 """
 import os
 import sys
@@ -17,6 +24,49 @@ ALPHA_VANTAGE_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "")
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.html")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "docs")
 OUTPUT_PATH = os.path.join(OUTPUT_DIR, "index.html")
+
+INDICES = [
+    ("SPY", "S&P 500"),
+    ("QQQ", "Nasdaq"),
+    ("DIA", "Dow Jones"),
+]
+
+STOCKS = [
+    ("AAPL", "Apple"),
+    ("MSFT", "Microsoft"),
+    ("GOOGL", "Alphabet"),
+    ("AMZN", "Amazon"),
+    ("NVDA", "Nvidia"),
+    ("META", "Meta"),
+    ("TSLA", "Tesla"),
+    ("JPM", "JPMorgan"),
+    ("V", "Visa"),
+    ("JNJ", "Johnson & Johnson"),
+    ("WMT", "Walmart"),
+    ("XOM", "Exxon Mobil"),
+    ("UNH", "UnitedHealth"),
+    ("PG", "Procter & Gamble"),
+    ("HD", "Home Depot"),
+]
+
+# CoinGecko ids -> (display name, symbol)
+CRYPTO = [
+    ("bitcoin", "Bitcoin", "BTC"),
+    ("ethereum", "Ethereum", "ETH"),
+    ("tether", "Tether", "USDT"),
+    ("binancecoin", "BNB", "BNB"),
+    ("solana", "Solana", "SOL"),
+    ("ripple", "XRP", "XRP"),
+    ("usd-coin", "USD Coin", "USDC"),
+    ("dogecoin", "Dogecoin", "DOGE"),
+    ("cardano", "Cardano", "ADA"),
+    ("tron", "TRON", "TRX"),
+    ("avalanche-2", "Avalanche", "AVAX"),
+    ("chainlink", "Chainlink", "LINK"),
+    ("the-open-network", "Toncoin", "TON"),
+    ("polkadot", "Polkadot", "DOT"),
+    ("litecoin", "Litecoin", "LTC"),
+]
 
 
 def fmt_money(n, decimals=2):
@@ -48,14 +98,11 @@ def get_alpha_vantage_quote(symbol):
 
 
 def get_crypto_data():
-    """Returns dict with btc_price, btc_chg, eth_price, eth_chg, btc_dominance."""
+    """Returns dict: id -> {price, chg}, plus btc dominance, in one batched call."""
+    ids = ",".join(c[0] for c in CRYPTO)
     r = requests.get(
         "https://api.coingecko.com/api/v3/simple/price",
-        params={
-            "ids": "bitcoin,ethereum",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true",
-        },
+        params={"ids": ids, "vs_currencies": "usd", "include_24hr_change": "true"},
         timeout=20,
     )
     r.raise_for_status()
@@ -65,13 +112,7 @@ def get_crypto_data():
     r2.raise_for_status()
     dominance = r2.json()["data"]["market_cap_percentage"]["btc"]
 
-    return {
-        "btc_price": prices["bitcoin"]["usd"],
-        "btc_chg": prices["bitcoin"]["usd_24h_change"],
-        "eth_price": prices["ethereum"]["usd"],
-        "eth_chg": prices["ethereum"]["usd_24h_change"],
-        "btc_dominance": dominance,
-    }
+    return prices, dominance
 
 
 def get_fear_greed():
@@ -83,7 +124,6 @@ def get_fear_greed():
 
 
 def cycle_read_text(fng_value, btc_chg):
-    """Rule-based, clearly-labeled-as-speculative cycle commentary."""
     trend = "climbing" if btc_chg >= 0 else "pulling back"
     if fng_value <= 24:
         return (
@@ -123,25 +163,81 @@ def session_note(sp_chg, nasdaq_chg, dow_chg):
 
 
 def fng_angle(value):
-    # Semicircle gauge: needle default points "up" (neutral center of arc).
-    # -90deg = full FEAR (left), +90deg = full GREED (right).
     return round((value * 1.8) - 90, 1)
+
+
+def tile_html(symbol, name, price, chg, money_decimals=2):
+    return (
+        '<div class="tile">'
+        f'<div class="tile-top"><span class="tile-sym">{symbol}</span>'
+        f'<span class="chg {cls_for(chg)}">{fmt_pct(chg)}</span></div>'
+        f'<div class="tile-name">{name}</div>'
+        f'<div class="tile-price mono">{fmt_money(price, money_decimals)}</div>'
+        "</div>"
+    )
+
+
+def mover_line(label, symbol, chg):
+    return (
+        f'<div class="mover-item"><span class="mover-label">{label}</span> '
+        f'<span class="mover-sym">{symbol}</span> '
+        f'<span class="chg {cls_for(chg)}">{fmt_pct(chg)}</span></div>'
+    )
 
 
 def main():
     now = datetime.now(timezone.utc).astimezone()
     updated_at = now.strftime("%b %d, %Y · %I:%M %p %Z")
 
-    # --- Equities (Alpha Vantage; small delay to respect free-tier rate limit) ---
-    sp_price, sp_chg = get_alpha_vantage_quote("SPY")
-    time.sleep(12)
-    nasdaq_price, nasdaq_chg = get_alpha_vantage_quote("QQQ")
-    time.sleep(12)
-    dow_price, dow_chg = get_alpha_vantage_quote("DIA")
+    # --- Indices + extended stock watchlist (Alpha Vantage; rate-limit safe) ---
+    all_symbols = INDICES + STOCKS
+    quotes = {}
+    for i, (symbol, name) in enumerate(all_symbols):
+        price, chg = get_alpha_vantage_quote(symbol)
+        quotes[symbol] = {"name": name, "price": price, "chg": chg}
+        if i < len(all_symbols) - 1:
+            time.sleep(12)
+
+    sp_price, sp_chg = quotes["SPY"]["price"], quotes["SPY"]["chg"]
+    nasdaq_price, nasdaq_chg = quotes["QQQ"]["price"], quotes["QQQ"]["chg"]
+    dow_price, dow_chg = quotes["DIA"]["price"], quotes["DIA"]["chg"]
+
+    stock_tiles = "".join(
+        tile_html(sym, quotes[sym]["name"], quotes[sym]["price"], quotes[sym]["chg"])
+        for sym, _ in STOCKS
+    )
+    best_stock = max(STOCKS, key=lambda s: quotes[s[0]]["chg"])
+    worst_stock = min(STOCKS, key=lambda s: quotes[s[0]]["chg"])
 
     # --- Crypto ---
-    crypto = get_crypto_data()
+    prices, dominance = get_crypto_data()
     fng_value, fng_label = get_fear_greed()
+
+    crypto_tiles_parts = []
+    crypto_changes = {}
+    for cg_id, name, symbol in CRYPTO:
+        d = prices.get(cg_id, {})
+        price = d.get("usd", 0.0)
+        chg = d.get("usd_24h_change", 0.0)
+        crypto_changes[cg_id] = chg
+        decimals = 2 if price < 1000 else 0
+        crypto_tiles_parts.append(tile_html(symbol, name, price, chg, decimals))
+    crypto_tiles = "".join(crypto_tiles_parts)
+
+    best_crypto = max(CRYPTO, key=lambda c: crypto_changes[c[0]])
+    worst_crypto = min(CRYPTO, key=lambda c: crypto_changes[c[0]])
+
+    btc_price = prices["bitcoin"]["usd"]
+    btc_chg = prices["bitcoin"]["usd_24h_change"]
+    eth_price = prices["ethereum"]["usd"]
+    eth_chg = prices["ethereum"]["usd_24h_change"]
+
+    movers_html = (
+        mover_line("Top stock", best_stock[0], quotes[best_stock[0]]["chg"])
+        + mover_line("Lagging stock", worst_stock[0], quotes[worst_stock[0]]["chg"])
+        + mover_line("Top coin", best_crypto[2], crypto_changes[best_crypto[0]])
+        + mover_line("Lagging coin", worst_crypto[2], crypto_changes[worst_crypto[0]])
+    )
 
     replacements = {
         "{{UPDATED_AT}}": updated_at,
@@ -155,18 +251,21 @@ def main():
         "{{DOW_CHG}}": fmt_pct(dow_chg),
         "{{DOW_CLASS}}": cls_for(dow_chg),
         "{{SESSION_NOTE}}": session_note(sp_chg, nasdaq_chg, dow_chg),
-        "{{BTC_PRICE}}": fmt_money(crypto["btc_price"], 0),
-        "{{BTC_CHG}}": fmt_pct(crypto["btc_chg"]),
-        "{{BTC_CLASS}}": cls_for(crypto["btc_chg"]),
-        "{{ETH_PRICE}}": fmt_money(crypto["eth_price"]),
-        "{{ETH_CHG}}": fmt_pct(crypto["eth_chg"]),
-        "{{ETH_CLASS}}": cls_for(crypto["eth_chg"]),
-        "{{BTC_DOM}}": f"{crypto['btc_dominance']:.2f}%",
+        "{{BTC_PRICE}}": fmt_money(btc_price, 0),
+        "{{BTC_CHG}}": fmt_pct(btc_chg),
+        "{{BTC_CLASS}}": cls_for(btc_chg),
+        "{{ETH_PRICE}}": fmt_money(eth_price),
+        "{{ETH_CHG}}": fmt_pct(eth_chg),
+        "{{ETH_CLASS}}": cls_for(eth_chg),
+        "{{BTC_DOM}}": f"{dominance:.2f}%",
         "{{FNG_VALUE}}": str(fng_value),
         "{{FNG_LABEL}}": fng_label,
         "{{FNG_PILL}}": "RISK-OFF" if fng_value < 45 else ("NEUTRAL" if fng_value <= 55 else "RISK-ON"),
         "{{FNG_ANGLE}}": str(fng_angle(fng_value)),
-        "{{CYCLE_TEXT}}": cycle_read_text(fng_value, crypto["btc_chg"]),
+        "{{CYCLE_TEXT}}": cycle_read_text(fng_value, btc_chg),
+        "{{STOCK_TILES}}": stock_tiles,
+        "{{CRYPTO_TILES}}": crypto_tiles,
+        "{{MOVERS}}": movers_html,
     }
 
     ticker_item = (
@@ -182,6 +281,10 @@ def main():
         '<span class="{ETH_CLASS}">{ETH_CHG}</span></span>'
         '<span class="ticker-item"><span class="lbl">F&amp;G</span> {FNG_VALUE} '
         '<span class="{FNG_CLASS}">{FNG_LABEL}</span></span>'
+        '<span class="ticker-item"><span class="lbl">TOP STOCK</span> {BEST_STOCK_SYM} '
+        '<span class="up">{BEST_STOCK_CHG}</span></span>'
+        '<span class="ticker-item"><span class="lbl">TOP COIN</span> {BEST_CRYPTO_SYM} '
+        '<span class="up">{BEST_CRYPTO_CHG}</span></span>'
     ).format(
         SP_PRICE=replacements["{{SP_PRICE}}"], SP_CLASS=replacements["{{SP_CLASS}}"], SP_CHG=replacements["{{SP_CHG}}"],
         NASDAQ_PRICE=replacements["{{NASDAQ_PRICE}}"], NASDAQ_CLASS=replacements["{{NASDAQ_CLASS}}"], NASDAQ_CHG=replacements["{{NASDAQ_CHG}}"],
@@ -189,6 +292,8 @@ def main():
         BTC_PRICE=replacements["{{BTC_PRICE}}"], BTC_CLASS=replacements["{{BTC_CLASS}}"], BTC_CHG=replacements["{{BTC_CHG}}"],
         ETH_PRICE=replacements["{{ETH_PRICE}}"], ETH_CLASS=replacements["{{ETH_CLASS}}"], ETH_CHG=replacements["{{ETH_CHG}}"],
         FNG_VALUE=replacements["{{FNG_VALUE}}"], FNG_CLASS=("down" if fng_value < 45 else "up"), FNG_LABEL=fng_label,
+        BEST_STOCK_SYM=best_stock[0], BEST_STOCK_CHG=fmt_pct(quotes[best_stock[0]]["chg"]),
+        BEST_CRYPTO_SYM=best_crypto[2], BEST_CRYPTO_CHG=fmt_pct(crypto_changes[best_crypto[0]]),
     )
     replacements["{{TICKER_TRACK}}"] = ticker_item
 
