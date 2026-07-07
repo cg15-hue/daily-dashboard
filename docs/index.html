@@ -15,6 +15,10 @@
   @keyframes orbFloat2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-35px,25px) scale(1.1); } }
   @keyframes orbFloat3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,35px) scale(1.06); } }
   @keyframes beamX { 0% { transform: translateX(-20%); opacity: 0; } 10%,90% { opacity: 1; } 100% { transform: translateX(120%); opacity: 0; } }
+  @keyframes traceFlow { to { stroke-dashoffset: -400; } }
+  @keyframes nodeGlow { 0%,100% { opacity: .25; r: 2.2; } 50% { opacity: 1; r: 3.4; } }
+  @keyframes drift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(8px,-10px); } }
+  @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(220%); } }
 
   @property --a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
   html, body { height: 100%; }
@@ -46,6 +50,18 @@
     background: linear-gradient(90deg, transparent, rgba(99,140,255,.7), transparent); }
   .beam-x.b1 { top: 22%; animation: beamX 7s linear infinite; }
   .beam-x.b2 { top: 68%; animation: beamX 9s linear infinite 2s; }
+  .circuit-svg {
+    position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;
+    mask-image: radial-gradient(circle at 50% 15%, black 0%, transparent 72%);
+  }
+  .circuit-svg .trace { fill: none; stroke: #3b5bdb; stroke-opacity: .16; stroke-width: 1.2; }
+  .circuit-svg .trace-flow { fill: none; stroke: #6d8bff; stroke-opacity: .55; stroke-width: 1.4; stroke-dasharray: 6 14; animation: traceFlow 3.5s linear infinite; }
+  .circuit-svg .node { fill: #5b7cfa; animation: nodeGlow 2.6s ease-in-out infinite; }
+  .particles { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .particle { position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(99,102,241,.5), transparent 70%); animation: drift 6s ease-in-out infinite; }
+  .scan-sweep { position: absolute; left: 0; right: 0; height: 40%; top: 0; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(124,158,255,0.10), transparent); animation: scan 5s linear infinite; }
   .mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
 
   .wrap { max-width: 960px; margin: 0 auto; position: relative; z-index: 1; animation: fadeUp .55s ease both; }
@@ -158,11 +174,49 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile-price { font-size: 13.5px; font-weight: 800; color: #12141c; }
   .tile .chg { font-size: 9.5px; padding: 2px 5px; border-radius: 5px; }
+
+  .range-sub { font-size: 9.5px; color: #9aa2b1; font-weight: 600; margin-top: 2px; }
+
+  .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+  @media (max-width: 720px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } }
+  .stat-card {
+    background: rgba(255,255,255,0.86); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid #eceff7; border-radius: 14px; padding: 14px 16px; position: relative; overflow: hidden;
+    box-shadow: 0 8px 22px rgba(20,30,70,0.05);
+  }
+  .stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--acc, #2563eb); }
+  .stat-label { font-size: 9.5px; font-weight: 800; color: #9aa2b1; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+  .stat-value { font-size: 18px; font-weight: 800; color: #0b1220; }
+  .stat-sub { font-size: 11px; font-weight: 700; margin-top: 3px; }
 </style>
 </head>
 <body>
 <div class="bg-orbs"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div></div>
+
+<svg class="circuit-svg" preserveAspectRatio="none">
+  <defs>
+    <pattern id="circuitPattern" width="160" height="160" patternUnits="userSpaceOnUse">
+      <path class="trace" d="M0,40 H60 V0" />
+      <path class="trace" d="M160,120 H100 V160" />
+      <path class="trace" d="M0,120 H40 V160" />
+      <path class="trace" d="M100,0 V50 H160" />
+      <path class="trace" d="M60,80 H120 V160" />
+      <path class="trace" d="M0,80 H30" />
+      <circle class="node" cx="60" cy="40" r="2.6" />
+      <circle class="node" cx="100" cy="120" r="2.6" />
+      <circle class="node" cx="40" cy="120" r="2.6" />
+      <circle class="node" cx="100" cy="50" r="2.6" />
+      <circle class="node" cx="120" cy="80" r="2.6" />
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#circuitPattern)" />
+  <path class="trace-flow" d="M0,40 H60 V0" />
+  <path class="trace-flow" d="M100,0 V50 H160" style="animation-delay:-1.2s" />
+  <path class="trace-flow" d="M60,80 H120 V160" style="animation-delay:-2.4s" />
+</svg>
+
 <div class="beam-x b1"></div><div class="beam-x b2"></div>
+<div class="particles" id="particles"></div>
 
 <div class="wrap">
   <div class="topline"></div>
@@ -176,20 +230,21 @@
     </div>
     <div class="status">
       <div class="live-badge"><span class="live-dot"></span> Auto-Updated</div>
-      <div class="clock mono">Jul 07, 2026 · 03:08 AM UTC</div>
+      <div class="clock mono">Jul 07, 2026 · 06:21 PM UTC</div>
     </div>
   </div>
 
   <div class="ticker-shell">
     <div class="ticker-track mono">
-      <span class="ticker-item"><span class="lbl">S&amp;P 500</span> $751.28 <span class="up">▲ 0.87%</span></span><span class="ticker-item"><span class="lbl">NASDAQ</span> $722.82 <span class="up">▲ 1.43%</span></span><span class="ticker-item"><span class="lbl">DOW</span> $530.09 <span class="up">▲ 0.42%</span></span><span class="ticker-item"><span class="lbl">BTC</span> $63,345 <span class="down">▼ 0.01%</span></span><span class="ticker-item"><span class="lbl">ETH</span> $1,779.05 <span class="down">▼ 0.10%</span></span><span class="ticker-item"><span class="lbl">F&amp;G</span> 27 <span class="down">Fear</span></span><span class="ticker-item"><span class="lbl">TOP STOCK</span> TSLA <span class="up">▲ 6.69%</span></span><span class="ticker-item"><span class="lbl">TOP COIN</span> SOL <span class="up">▲ 0.60%</span></span>
-      <span class="ticker-item"><span class="lbl">S&amp;P 500</span> $751.28 <span class="up">▲ 0.87%</span></span><span class="ticker-item"><span class="lbl">NASDAQ</span> $722.82 <span class="up">▲ 1.43%</span></span><span class="ticker-item"><span class="lbl">DOW</span> $530.09 <span class="up">▲ 0.42%</span></span><span class="ticker-item"><span class="lbl">BTC</span> $63,345 <span class="down">▼ 0.01%</span></span><span class="ticker-item"><span class="lbl">ETH</span> $1,779.05 <span class="down">▼ 0.10%</span></span><span class="ticker-item"><span class="lbl">F&amp;G</span> 27 <span class="down">Fear</span></span><span class="ticker-item"><span class="lbl">TOP STOCK</span> TSLA <span class="up">▲ 6.69%</span></span><span class="ticker-item"><span class="lbl">TOP COIN</span> SOL <span class="up">▲ 0.60%</span></span>
+      <span class="ticker-item"><span class="lbl">S&amp;P 500</span> $751.28 <span class="up">▲ 0.87%</span></span><span class="ticker-item"><span class="lbl">NASDAQ</span> $722.82 <span class="up">▲ 1.43%</span></span><span class="ticker-item"><span class="lbl">DOW</span> $530.09 <span class="up">▲ 0.42%</span></span><span class="ticker-item"><span class="lbl">BTC</span> $64,069 <span class="up">▲ 0.50%</span></span><span class="ticker-item"><span class="lbl">ETH</span> $1,804.42 <span class="up">▲ 0.71%</span></span><span class="ticker-item"><span class="lbl">F&amp;G</span> 27 <span class="down">Fear</span></span><span class="ticker-item"><span class="lbl">TOP STOCK</span> TSLA <span class="up">▲ 6.69%</span></span><span class="ticker-item"><span class="lbl">TOP COIN</span> TRX <span class="up">▲ 1.08%</span></span>
+      <span class="ticker-item"><span class="lbl">S&amp;P 500</span> $751.28 <span class="up">▲ 0.87%</span></span><span class="ticker-item"><span class="lbl">NASDAQ</span> $722.82 <span class="up">▲ 1.43%</span></span><span class="ticker-item"><span class="lbl">DOW</span> $530.09 <span class="up">▲ 0.42%</span></span><span class="ticker-item"><span class="lbl">BTC</span> $64,069 <span class="up">▲ 0.50%</span></span><span class="ticker-item"><span class="lbl">ETH</span> $1,804.42 <span class="up">▲ 0.71%</span></span><span class="ticker-item"><span class="lbl">F&amp;G</span> 27 <span class="down">Fear</span></span><span class="ticker-item"><span class="lbl">TOP STOCK</span> TSLA <span class="up">▲ 6.69%</span></span><span class="ticker-item"><span class="lbl">TOP COIN</span> TRX <span class="up">▲ 1.08%</span></span>
     </div>
   </div>
 
   <div class="grid">
     <div class="panel-frame market-frame">
     <div class="panel market">
+      <div class="scan-sweep"></div>
       <div class="corner tl"></div><div class="corner br"></div>
       <div class="panel-title">
         <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17L9 11L13 15L21 6" stroke="#2563eb" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Market Report</span>
@@ -200,14 +255,17 @@
         <div class="metric-name">S&amp;P 500 <span class="ticker-tag">SPY</span></div>
         <div class="metric-vals"><span class="metric-price mono">$751.28</span><span class="chg up">▲ 0.87%</span></div>
       </div>
+      <div class="range-sub">Day range $747.41 – $752.41</div>
       <div class="metric-row">
         <div class="metric-name">Nasdaq <span class="ticker-tag">QQQ</span></div>
         <div class="metric-vals"><span class="metric-price mono">$722.82</span><span class="chg up">▲ 1.43%</span></div>
       </div>
+      <div class="range-sub">Day range $718.45 – $726.08</div>
       <div class="metric-row">
         <div class="metric-name">Dow Jones <span class="ticker-tag">DIA</span></div>
         <div class="metric-vals"><span class="metric-price mono">$530.09</span><span class="chg up">▲ 0.42%</span></div>
       </div>
+      <div class="range-sub">Day range $525.85 – $530.09</div>
 
       <div class="section-label">Session read</div>
       <div class="news-item">Broad-based gains across all three major indices today.</div>
@@ -217,6 +275,7 @@
 
     <div class="panel-frame crypto-frame">
     <div class="panel crypto">
+      <div class="scan-sweep"></div>
       <div class="corner tl"></div><div class="corner br"></div>
       <div class="panel-title">
         <span class="lhs"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M9 6V18M13 6V18M6 9H16.5C18 9 19 8 19 6.5C19 5 18 4 16.5 4H6M6 15H17C18.5 15 19.5 16 19.5 17.5C19.5 19 18.5 20 17 20H6" stroke="#d97706" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Crypto Cycle Report</span>
@@ -225,15 +284,21 @@
 
       <div class="metric-row">
         <div class="metric-name">Bitcoin <span class="ticker-tag">BTC</span></div>
-        <div class="metric-vals"><span class="metric-price mono">$63,345</span><span class="chg down">▼ 0.01%</span></div>
+        <div class="metric-vals"><span class="metric-price mono">$64,069</span><span class="chg up">▲ 0.50%</span></div>
       </div>
+      <div class="range-sub">24h range $62,815 – $64,387</div>
       <div class="metric-row">
         <div class="metric-name">Ethereum <span class="ticker-tag">ETH</span></div>
-        <div class="metric-vals"><span class="metric-price mono">$1,779.05</span><span class="chg down">▼ 0.10%</span></div>
+        <div class="metric-vals"><span class="metric-price mono">$1,804.42</span><span class="chg up">▲ 0.71%</span></div>
       </div>
+      <div class="range-sub">24h range $1,759.03 – $1,819.88</div>
       <div class="metric-row">
         <div class="metric-name">BTC Dominance</div>
-        <div class="metric-vals"><span class="metric-price mono">55.81%</span></div>
+        <div class="metric-vals"><span class="metric-price mono">56.06%</span></div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">ETH Dominance</div>
+        <div class="metric-vals"><span class="metric-price mono">9.50%</span></div>
       </div>
 
       <div class="gauge-wrap">
@@ -258,14 +323,37 @@
 
       <div class="cycle-box">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#d97706" stroke-width="1.8"/><path d="M12 7V12L15 14" stroke="#d97706" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <div><b>Cycle read (informed, not certain):</b> Fear-dominant sentiment with BTC pulling back. Consistent with a risk-off or early-recovery phase rather than a confirmed bull run.</div>
+        <div><b>Cycle read (informed, not certain):</b> Fear-dominant sentiment with BTC climbing. Consistent with a risk-off or early-recovery phase rather than a confirmed bull run.</div>
       </div>
     </div>
     </div>
   </div>
 
+  <div class="stats-strip">
+    <div class="stat-card" style="--acc:#2563eb">
+      <div class="stat-label">Market Breadth</div>
+      <div class="stat-value mono">7/15</div>
+      <div class="stat-sub down">of 15 tracked stocks up</div>
+    </div>
+    <div class="stat-card" style="--acc:#f59e0b">
+      <div class="stat-label">Total Crypto Market Cap</div>
+      <div class="stat-value mono">$2.29T</div>
+      <div class="stat-sub up">▲ 0.23% (24h)</div>
+    </div>
+    <div class="stat-card" style="--acc:#7c3aed">
+      <div class="stat-label">24h Crypto Volume</div>
+      <div class="stat-value mono">$112.0B</div>
+      <div class="stat-sub" style="color:#9aa2b1">across tracked coins</div>
+    </div>
+    <div class="stat-card" style="--acc:#16a34a">
+      <div class="stat-label">BTC + ETH Dominance</div>
+      <div class="stat-value mono">65.6%</div>
+      <div class="stat-sub" style="color:#9aa2b1">share of total market cap</div>
+    </div>
+  </div>
+
   <div class="movers-bar">
-    <div class="mover-item"><span class="mover-label">Top stock</span> <span class="mover-sym">TSLA</span> <span class="chg up">▲ 6.69%</span></div><div class="mover-item"><span class="mover-label">Lagging stock</span> <span class="mover-sym">HD</span> <span class="chg down">▼ 2.03%</span></div><div class="mover-item"><span class="mover-label">Top coin</span> <span class="mover-sym">SOL</span> <span class="chg up">▲ 0.60%</span></div><div class="mover-item"><span class="mover-label">Lagging coin</span> <span class="mover-sym">ADA</span> <span class="chg down">▼ 3.71%</span></div>
+    <div class="mover-item"><span class="mover-label">Top stock</span> <span class="mover-sym">TSLA</span> <span class="chg up">▲ 6.69%</span></div><div class="mover-item"><span class="mover-label">Lagging stock</span> <span class="mover-sym">HD</span> <span class="chg down">▼ 2.03%</span></div><div class="mover-item"><span class="mover-label">Top coin</span> <span class="mover-sym">TRX</span> <span class="chg up">▲ 1.08%</span></div><div class="mover-item"><span class="mover-label">Lagging coin</span> <span class="mover-sym">TON</span> <span class="chg down">▼ 6.43%</span></div>
   </div>
 
   <div class="wide-panel">
@@ -284,11 +372,28 @@
       <span class="seg">15 COINS</span>
     </div>
     <div class="tile-grid">
-      <div class="tile"><div class="tile-top"><span class="tile-sym">BTC</span><span class="chg down">▼ 0.01%</span></div><div class="tile-name">Bitcoin</div><div class="tile-price mono">$63,345</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">ETH</span><span class="chg down">▼ 0.10%</span></div><div class="tile-name">Ethereum</div><div class="tile-price mono">$1,779</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">USDT</span><span class="chg up">▲ 0.03%</span></div><div class="tile-name">Tether</div><div class="tile-price mono">$1.00</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">BNB</span><span class="chg down">▼ 0.70%</span></div><div class="tile-name">BNB</div><div class="tile-price mono">$580.86</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">SOL</span><span class="chg up">▲ 0.60%</span></div><div class="tile-name">Solana</div><div class="tile-price mono">$81.36</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">XRP</span><span class="chg down">▼ 1.40%</span></div><div class="tile-name">XRP</div><div class="tile-price mono">$1.13</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">USDC</span><span class="chg up">▲ 0.02%</span></div><div class="tile-name">USD Coin</div><div class="tile-price mono">$1.00</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">DOGE</span><span class="chg down">▼ 2.95%</span></div><div class="tile-name">Dogecoin</div><div class="tile-price mono">$0.08</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">ADA</span><span class="chg down">▼ 3.71%</span></div><div class="tile-name">Cardano</div><div class="tile-price mono">$0.18</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">TRX</span><span class="chg up">▲ 0.34%</span></div><div class="tile-name">TRON</div><div class="tile-price mono">$0.33</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">AVAX</span><span class="chg down">▼ 1.43%</span></div><div class="tile-name">Avalanche</div><div class="tile-price mono">$6.82</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">LINK</span><span class="chg down">▼ 1.28%</span></div><div class="tile-name">Chainlink</div><div class="tile-price mono">$7.91</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">TON</span><span class="chg down">▼ 2.00%</span></div><div class="tile-name">Toncoin</div><div class="tile-price mono">$1.73</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">DOT</span><span class="chg down">▼ 1.01%</span></div><div class="tile-name">Polkadot</div><div class="tile-price mono">$0.87</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">LTC</span><span class="chg down">▼ 2.03%</span></div><div class="tile-name">Litecoin</div><div class="tile-price mono">$44.31</div></div>
+      <div class="tile"><div class="tile-top"><span class="tile-sym">BTC</span><span class="chg up">▲ 0.50%</span></div><div class="tile-name">Bitcoin</div><div class="tile-price mono">$64,069</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">ETH</span><span class="chg up">▲ 0.71%</span></div><div class="tile-name">Ethereum</div><div class="tile-price mono">$1,804</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">USDT</span><span class="chg down">▼ 0.00%</span></div><div class="tile-name">Tether</div><div class="tile-price mono">$1.00</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">BNB</span><span class="chg up">▲ 0.12%</span></div><div class="tile-name">BNB</div><div class="tile-price mono">$584.98</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">SOL</span><span class="chg up">▲ 1.00%</span></div><div class="tile-name">Solana</div><div class="tile-price mono">$82.22</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">XRP</span><span class="chg down">▼ 1.25%</span></div><div class="tile-name">XRP</div><div class="tile-price mono">$1.13</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">USDC</span><span class="chg up">▲ 0.01%</span></div><div class="tile-name">USD Coin</div><div class="tile-price mono">$1.00</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">DOGE</span><span class="chg down">▼ 1.85%</span></div><div class="tile-name">Dogecoin</div><div class="tile-price mono">$0.08</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">ADA</span><span class="chg down">▼ 3.30%</span></div><div class="tile-name">Cardano</div><div class="tile-price mono">$0.18</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">TRX</span><span class="chg up">▲ 1.08%</span></div><div class="tile-name">TRON</div><div class="tile-price mono">$0.33</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">AVAX</span><span class="chg down">▼ 1.80%</span></div><div class="tile-name">Avalanche</div><div class="tile-price mono">$6.79</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">LINK</span><span class="chg down">▼ 0.11%</span></div><div class="tile-name">Chainlink</div><div class="tile-price mono">$7.99</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">TON</span><span class="chg down">▼ 6.43%</span></div><div class="tile-name">Toncoin</div><div class="tile-price mono">$1.67</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">DOT</span><span class="chg down">▼ 1.84%</span></div><div class="tile-name">Polkadot</div><div class="tile-price mono">$0.87</div></div><div class="tile"><div class="tile-top"><span class="tile-sym">LTC</span><span class="chg down">▼ 1.41%</span></div><div class="tile-name">Litecoin</div><div class="tile-price mono">$44.42</div></div>
     </div>
   </div>
 
-  <div class="footer-note">Data as of Jul 07, 2026 · 03:08 AM UTC · <span class="shine">Generated automatically by GitHub Actions</span></div>
+  <div class="footer-note">Data as of Jul 07, 2026 · 06:21 PM UTC · <span class="shine">Generated automatically by GitHub Actions</span></div>
 </div>
+
+<script>
+  var field = document.getElementById('particles');
+  if (field) {
+    var n = 18;
+    for (var i = 0; i < n; i++) {
+      var p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = (Math.random() * 100) + '%';
+      p.style.top = (Math.random() * 100) + '%';
+      p.style.animationDelay = (Math.random() * 6) + 's';
+      p.style.animationDuration = (5 + Math.random() * 4) + 's';
+      p.style.opacity = (0.3 + Math.random() * 0.5).toFixed(2);
+      field.appendChild(p);
+    }
+  }
+</script>
 </body>
 </html>
