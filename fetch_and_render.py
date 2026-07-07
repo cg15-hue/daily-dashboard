@@ -82,8 +82,24 @@ def cls_for(n):
     return "up" if n >= 0 else "down"
 
 
+def fmt_big(n):
+    """Formats a large dollar figure as e.g. $2.31T / $89.4B / $412.0M."""
+    n = float(n)
+    if n >= 1e12:
+        return f"${n / 1e12:.2f}T"
+    if n >= 1e9:
+        return f"${n / 1e9:.1f}B"
+    if n >= 1e6:
+        return f"${n / 1e6:.1f}M"
+    return fmt_money(n)
+
+
+def fmt_range(low, high, decimals=2):
+    return f"{fmt_money(low, decimals)} – {fmt_money(high, decimals)}"
+
+
 def get_alpha_vantage_quote(symbol):
-    """Returns (price, pct_change) for a ticker via Alpha Vantage GLOBAL_QUOTE."""
+    """Returns (price, pct_change, high, low) for a ticker via Alpha Vantage GLOBAL_QUOTE."""
     if not ALPHA_VANTAGE_KEY:
         raise RuntimeError("ALPHA_VANTAGE_KEY is not set")
     url = "https://www.alphavantage.co/query"
@@ -94,25 +110,35 @@ def get_alpha_vantage_quote(symbol):
     price = float(data["05. price"])
     pct_raw = data.get("10. change percent", "0%").replace("%", "")
     pct = float(pct_raw)
-    return price, pct
+    high = float(data.get("03. high", price))
+    low = float(data.get("04. low", price))
+    return price, pct, high, low
 
 
 def get_crypto_data():
-    """Returns dict: id -> {price, chg}, plus btc dominance, in one batched call."""
+    """Returns (dict: id -> market data, dominance_dict, global_data) using CoinGecko's
+    richer /coins/markets endpoint (one batched call) plus /global for aggregate stats."""
     ids = ",".join(c[0] for c in CRYPTO)
     r = requests.get(
-        "https://api.coingecko.com/api/v3/simple/price",
-        params={"ids": ids, "vs_currencies": "usd", "include_24hr_change": "true"},
+        "https://api.coingecko.com/api/v3/coins/markets",
+        params={
+            "vs_currency": "usd",
+            "ids": ids,
+            "order": "market_cap_desc",
+            "price_change_percentage": "24h",
+            "sparkline": "false",
+        },
         timeout=20,
     )
     r.raise_for_status()
-    prices = r.json()
+    rows = r.json()
+    by_id = {row["id"]: row for row in rows}
 
     r2 = requests.get("https://api.coingecko.com/api/v3/global", timeout=20)
     r2.raise_for_status()
-    dominance = r2.json()["data"]["market_cap_percentage"]["btc"]
+    global_data = r2.json()["data"]
 
-    return prices, dominance
+    return by_id, global_data
 
 
 def get_fear_greed():
@@ -193,8 +219,8 @@ def main():
     all_symbols = INDICES + STOCKS
     quotes = {}
     for i, (symbol, name) in enumerate(all_symbols):
-        price, chg = get_alpha_vantage_quote(symbol)
-        quotes[symbol] = {"name": name, "price": price, "chg": chg}
+        price, chg, high, low = get_alpha_vantage_quote(symbol)
+        quotes[symbol] = {"name": name, "price": price, "chg": chg, "high": high, "low": low}
         if i < len(all_symbols) - 1:
             time.sleep(12)
 
@@ -208,18 +234,21 @@ def main():
     )
     best_stock = max(STOCKS, key=lambda s: quotes[s[0]]["chg"])
     worst_stock = min(STOCKS, key=lambda s: quotes[s[0]]["chg"])
+    stocks_up = sum(1 for sym, _ in STOCKS if quotes[sym]["chg"] > 0)
 
-    # --- Crypto ---
-    prices, dominance = get_crypto_data()
+    # --- Crypto (richer per-coin data: market cap, volume, 24h high/low) ---
+    by_id, global_data = get_crypto_data()
     fng_value, fng_label = get_fear_greed()
 
     crypto_tiles_parts = []
     crypto_changes = {}
+    total_volume = 0.0
     for cg_id, name, symbol in CRYPTO:
-        d = prices.get(cg_id, {})
-        price = d.get("usd", 0.0)
-        chg = d.get("usd_24h_change", 0.0)
+        row = by_id.get(cg_id, {})
+        price = row.get("current_price", 0.0) or 0.0
+        chg = row.get("price_change_percentage_24h", 0.0) or 0.0
         crypto_changes[cg_id] = chg
+        total_volume += row.get("total_volume", 0) or 0
         decimals = 2 if price < 1000 else 0
         crypto_tiles_parts.append(tile_html(symbol, name, price, chg, decimals))
     crypto_tiles = "".join(crypto_tiles_parts)
@@ -227,10 +256,18 @@ def main():
     best_crypto = max(CRYPTO, key=lambda c: crypto_changes[c[0]])
     worst_crypto = min(CRYPTO, key=lambda c: crypto_changes[c[0]])
 
-    btc_price = prices["bitcoin"]["usd"]
-    btc_chg = prices["bitcoin"]["usd_24h_change"]
-    eth_price = prices["ethereum"]["usd"]
-    eth_chg = prices["ethereum"]["usd_24h_change"]
+    btc_row = by_id.get("bitcoin", {})
+    eth_row = by_id.get("ethereum", {})
+    btc_price = btc_row.get("current_price", 0.0)
+    btc_chg = btc_row.get("price_change_percentage_24h", 0.0) or 0.0
+    eth_price = eth_row.get("current_price", 0.0)
+    eth_chg = eth_row.get("price_change_percentage_24h", 0.0) or 0.0
+
+    dom = global_data["market_cap_percentage"]
+    btc_dom = dom.get("btc", 0.0)
+    eth_dom = dom.get("eth", 0.0)
+    total_mcap = global_data["total_market_cap"]["usd"]
+    mcap_chg = global_data.get("market_cap_change_percentage_24h_usd", 0.0)
 
     movers_html = (
         mover_line("Top stock", best_stock[0], quotes[best_stock[0]]["chg"])
@@ -244,20 +281,26 @@ def main():
         "{{SP_PRICE}}": fmt_money(sp_price),
         "{{SP_CHG}}": fmt_pct(sp_chg),
         "{{SP_CLASS}}": cls_for(sp_chg),
+        "{{SP_RANGE}}": fmt_range(quotes["SPY"]["low"], quotes["SPY"]["high"]),
         "{{NASDAQ_PRICE}}": fmt_money(nasdaq_price),
         "{{NASDAQ_CHG}}": fmt_pct(nasdaq_chg),
         "{{NASDAQ_CLASS}}": cls_for(nasdaq_chg),
+        "{{NASDAQ_RANGE}}": fmt_range(quotes["QQQ"]["low"], quotes["QQQ"]["high"]),
         "{{DOW_PRICE}}": fmt_money(dow_price),
         "{{DOW_CHG}}": fmt_pct(dow_chg),
         "{{DOW_CLASS}}": cls_for(dow_chg),
+        "{{DOW_RANGE}}": fmt_range(quotes["DIA"]["low"], quotes["DIA"]["high"]),
         "{{SESSION_NOTE}}": session_note(sp_chg, nasdaq_chg, dow_chg),
         "{{BTC_PRICE}}": fmt_money(btc_price, 0),
         "{{BTC_CHG}}": fmt_pct(btc_chg),
         "{{BTC_CLASS}}": cls_for(btc_chg),
+        "{{BTC_RANGE}}": fmt_range(btc_row.get("low_24h", btc_price), btc_row.get("high_24h", btc_price), 0),
         "{{ETH_PRICE}}": fmt_money(eth_price),
         "{{ETH_CHG}}": fmt_pct(eth_chg),
         "{{ETH_CLASS}}": cls_for(eth_chg),
-        "{{BTC_DOM}}": f"{dominance:.2f}%",
+        "{{ETH_RANGE}}": fmt_range(eth_row.get("low_24h", eth_price), eth_row.get("high_24h", eth_price)),
+        "{{BTC_DOM}}": f"{btc_dom:.2f}%",
+        "{{ETH_DOM}}": f"{eth_dom:.2f}%",
         "{{FNG_VALUE}}": str(fng_value),
         "{{FNG_LABEL}}": fng_label,
         "{{FNG_PILL}}": "RISK-OFF" if fng_value < 45 else ("NEUTRAL" if fng_value <= 55 else "RISK-ON"),
@@ -266,6 +309,13 @@ def main():
         "{{STOCK_TILES}}": stock_tiles,
         "{{CRYPTO_TILES}}": crypto_tiles,
         "{{MOVERS}}": movers_html,
+        "{{BREADTH}}": f"{stocks_up}/15",
+        "{{BREADTH_CLASS}}": "up" if stocks_up >= 8 else "down",
+        "{{TOTAL_MCAP}}": fmt_big(total_mcap),
+        "{{MCAP_CHG}}": fmt_pct(mcap_chg),
+        "{{MCAP_CLASS}}": cls_for(mcap_chg),
+        "{{TOTAL_VOL}}": fmt_big(total_volume),
+        "{{COMBINED_DOM}}": f"{btc_dom + eth_dom:.1f}%",
     }
 
     ticker_item = (
