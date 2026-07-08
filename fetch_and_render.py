@@ -172,7 +172,16 @@ def get_sector_performance():
     r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     data = r.json()
-    rank = data.get("Rank A: Real-Time Performance", {}) or data.get("Rank B: 1 Day Performance", {})
+    # Prefer real-time performance, but fall back to whatever "Rank *" block is
+    # present -- Alpha Vantage's exact key set/order can vary (market hours,
+    # rate-limit notes, etc.), so search rather than hardcode two exact strings.
+    rank = {}
+    for key in data:
+        if key.lower().startswith("rank"):
+            rank = data[key]
+            break
+    if not rank:
+        print(f"[get_sector_performance] no rank data found, response keys: {list(data.keys())}", file=sys.stderr)
     out = []
     for raw_name, pct_str in rank.items():
         name = SECTOR_NAMES.get(raw_name, raw_name)
@@ -369,7 +378,10 @@ def main():
     treasury_value, treasury_date = get_treasury_yield()
 
     max_sector_abs = max((abs(p) for _, p in sectors), default=1.0)
-    sector_html = "".join(sector_bar_html(name, pct, max_sector_abs) for name, pct in sectors)
+    sector_html = "".join(sector_bar_html(name, pct, max_sector_abs) for name, pct in sectors) or (
+        '<div class="mv-empty">Sector data temporarily unavailable (provider rate limit) '
+        "&mdash; will refresh on the next run.</div>"
+    )
     gainers_html = "".join(market_row_html(i) for i in gainers) or '<div class="mv-empty">No data returned this run.</div>'
     losers_html = "".join(market_row_html(i) for i in losers) or '<div class="mv-empty">No data returned this run.</div>'
     active_html = "".join(market_row_html(i, show_volume=True) for i in most_active) or '<div class="mv-empty">No data returned this run.</div>'

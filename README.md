@@ -55,14 +55,18 @@ GitHub runs it on their infrastructure.
 - S&P 500 / Nasdaq / Dow (via SPY/QQQ/DIA ETF proxies): Alpha Vantage (the one free key above)
 
 ## Watchlist size & rate limits
-The dashboard now tracks 15 stocks (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM,
-V, JNJ, WMT, XOM, UNH, PG, HD) plus the 3 indices (18 Alpha Vantage calls per run),
-and 15 crypto coins (one batched CoinGecko call, no limit concern). Alpha Vantage's
-free tier allows 25 requests/day, so each automatic daily run uses about 18 of that
-25 — leaving very little room for manual "Run workflow" re-triggers on the same day.
-If you want a bigger stock watchlist without hitting that ceiling, consider
-switching to a provider with a more generous free tier (e.g. Twelve Data, 800
-requests/day) — ask me and I can swap it in.
+The dashboard tracks 15 stocks (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM,
+V, JNJ, WMT, XOM, UNH, PG, HD) plus the 3 indices (18 Alpha Vantage `GLOBAL_QUOTE`
+calls per run), plus 3 more calls for sector performance, market-wide movers, and
+the 10-year Treasury yield — 21 Alpha Vantage requests per run in total. Crypto (15
+coins) is one batched CoinGecko call with no limit concern. Alpha Vantage's free
+tier allows 25 requests/day, so each automatic daily run uses about 21 of that 25 —
+leaving very little headroom for manual "Run workflow" re-triggers on the same day.
+If a run happens to land on a rate-limited moment, the sector performance panel
+will show a "temporarily unavailable" message rather than break the page, and
+should pick back up on the next run. If you want a bigger stock watchlist without
+hitting that ceiling, consider switching to a provider with a more generous free
+tier (e.g. Twelve Data, 800 requests/day) — ask me and I can swap it in.
 
 ## Changing the schedule
 Edit the `cron:` line in `.github/workflows/daily-report.yml`. It's currently
